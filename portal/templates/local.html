@@ -168,9 +168,40 @@
                             <span id="primary-btn-label">Download .DMG for macOS</span>
                         </a>
 
-                        <div class="flex items-center justify-between text-[11px] font-mono text-gray-600 px-1">
+                        <div class="flex items-center justify-between text-[11px] font-mono text-gray-600 px-1 mb-3">
                             <span id="detected-os-details">M1 / M2 / M3 / M4 · Metal GPU</span>
                             <a href="#downloads" class="text-brand-600 hover:underline font-bold">Other platforms ↓</a>
+                        </div>
+
+                        <!-- macOS Gatekeeper & Homebrew Callout -->
+                        <div id="macos-first-run-note" class="p-3 bg-amber-50 border-2 border-[#0d0f10] rounded-lg text-[11px] font-mono text-amber-950 space-y-2">
+                            <div class="font-bold flex items-center justify-between text-xs text-[#0d0f10]">
+                                <span class="flex items-center gap-1.5"><span>🍎</span> macOS First-Run & Updates</span>
+                                <span class="text-[9px] uppercase px-1.5 py-0.5 bg-amber-200 border border-[#0d0f10] rounded font-bold">Unsigned App</span>
+                            </div>
+                            <div class="space-y-1 text-[11px] text-gray-800 font-sans leading-tight">
+                                <p>
+                                    <strong>"Damaged / Move to Bin" warning?</strong> macOS Gatekeeper quarantines downloaded unsigned apps. Run this one-liner in Terminal to unblock:
+                                </p>
+                                <div class="bg-[#0d0f10] text-amber-300 p-1.5 rounded text-[10px] select-all font-mono">
+                                    <code>xattr -cr /Applications/Voxa.app</code>
+                                </div>
+                                <p class="text-[10px] text-gray-600">
+                                    Or allow it via <em>System Settings &rarr; Privacy &amp; Security &rarr; Open Anyway</em>.
+                                </p>
+                            </div>
+                            <div class="pt-1.5 border-t border-amber-200/80 space-y-1">
+                                <p class="text-[11px] font-sans font-bold text-gray-900 leading-tight">
+                                    Recommended: Install &amp; Auto-Update with Homebrew
+                                </p>
+                                <div class="bg-[#0d0f10] text-emerald-400 p-2 rounded text-[10px] select-all flex flex-col gap-0.5 font-mono">
+                                    <code>brew tap ArnavBallinCode/voxa</code>
+                                    <code>brew install --cask voxa</code>
+                                </div>
+                                <p class="text-[10px] text-gray-600 font-sans">
+                                    To update anytime: <code class="font-mono bg-amber-100 px-1 py-0.5 rounded text-[#0d0f10]">brew upgrade --cask voxa</code>
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -475,6 +506,11 @@
             const btnLabelEl = document.getElementById('primary-btn-label');
             const osDetailsEl = document.getElementById('detected-os-details');
             const primaryBtn = document.getElementById('primary-download-btn');
+            const macNoteEl = document.getElementById('macos-first-run-note');
+
+            if (macNoteEl && !isMac) {
+                macNoteEl.style.display = 'none';
+            }
 
             if (osIconEl) osIconEl.textContent = detected.icon;
             if (osNameEl) osNameEl.textContent = detected.name;
