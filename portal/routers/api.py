@@ -335,6 +335,24 @@ async def event_booth_state(
 
     state = await booths.get_booth_for_event(event_slug, room_id, language_code)
     if state is None:
+        # Booth state lives in memory, so it is empty after a restart and for
+        # booths added in the admin UI. Load booths that exist in the database
+        # instead of failing the booth page; unknown booths still get a 404.
+        async with get_session() as session:
+            stmt = (
+                select(DBBooth)
+                .join(Event)
+                .where(Event.slug == event_slug, DBBooth.room_id == room_id, DBBooth.language_code == language_code)
+            )
+            db_booth = await session.scalar(stmt)
+        if db_booth is not None:
+            state = await booths.snapshot(
+                booth_id=make_booth_id(event_slug, room_id, language_code),
+                language=db_booth.language_name,
+                channel_id=make_mediamtx_path(event_slug, room_id, language_code),
+                room_id=room_id,
+            )
+    if state is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No booth for language '{language_code}' in event '{event_slug}'.",

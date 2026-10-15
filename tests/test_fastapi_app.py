@@ -1488,6 +1488,39 @@ def test_event_booth_state_does_not_autocreate():
     assert res.json()["booths"] == []
 
 
+def test_event_booth_state_loads_booth_missing_from_memory():
+    """A booth that is in the database but not in memory (e.g. after a restart) still loads."""
+    import anyio
+
+    from portal.globals import booths
+
+    created = client.post("/api/events/restarted/booths", json={"language_code": "fr", "language": "French"}).json()
+    room_id = created["room_id"]
+    anyio.run(booths.remove_booth, "restarted", room_id, "fr")
+
+    res = client.get(f"/api/events/restarted/booths/fr/state?room_id={room_id}")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["booth_id"] == f"restarted-{room_id}-fr"
+    assert body["language"] == "French"
+    assert body["participants"] == []
+
+
+def test_event_booth_state_does_not_load_booth_from_other_event():
+    """The database fallback only finds booths of the event in the URL."""
+    import anyio
+
+    from portal.globals import booths
+
+    created = client.post("/api/events/ownerevent/booths", json={"language_code": "fr", "language": "French"}).json()
+    room_id = created["room_id"]
+    anyio.run(booths.remove_booth, "ownerevent", room_id, "fr")
+
+    res = client.get(f"/api/events/otherevent/booths/fr/state?room_id={room_id}")
+    assert res.status_code == 404
+    assert anyio.run(booths.get_booth_for_event, "otherevent", room_id, "fr") is None
+
+
 def test_event_booth_whip_url_active_interpreter():
     """Event-scoped WHIP URL returns URL for active interpreter."""
     client.post("/api/events/whipevent/booths", json={"language_code": "en", "room_id": 1, "language": "English"})
