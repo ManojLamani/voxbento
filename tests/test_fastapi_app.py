@@ -381,8 +381,13 @@ def test_ws_join_rejected_without_session():
     [
         ("roomcheck-1-fr", 2, "room_id does not match this booth."),
         ("roomcheck-1-de", "2", "room_id does not match this booth."),
-        # json.dumps writes Infinity, which int() rejects with OverflowError.
+        # int() would turn each of these into 1 (or raise on Infinity / too many digits).
         ("roomcheck-1-es", float("inf"), "room_id must be an integer."),
+        ("roomcheck-1-pt", True, "room_id must be an integer."),
+        ("roomcheck-1-nl", 1.5, "room_id must be an integer."),
+        ("roomcheck-1-sv", 1.0, "room_id must be an integer."),
+        ("roomcheck-1-pl", " 1", "room_id must be an integer."),
+        ("roomcheck-1-cs", "9" * 5000, "room_id must be an integer."),
     ],
 )
 def test_ws_join_rejects_room_id_not_matching_booth(booth_id, room_id, error):
@@ -399,14 +404,17 @@ def test_ws_join_rejects_room_id_not_matching_booth(booth_id, room_id, error):
     assert booths.get_booth_sync(booth_id) is None
 
 
-def test_ws_join_accepts_room_id_matching_booth():
-    with client.websocket_connect("/ws/booth/roomcheck-1-it", cookies=_ws_auth()) as ws:
-        ws.send_text(json.dumps({"type": "booth:join", "display_name": "Ana", "language": "Italian", "room_id": 1}))
+@pytest.mark.parametrize(("code", "room_id"), [("it", 1), ("ja", "1")])
+def test_ws_join_accepts_room_id_matching_booth(code, room_id):
+    with client.websocket_connect(f"/ws/booth/roomcheck-1-{code}", cookies=_ws_auth()) as ws:
+        ws.send_text(
+            json.dumps({"type": "booth:join", "display_name": "Ana", "language": "Italian", "room_id": room_id})
+        )
         msg = json.loads(ws.receive_text())
 
     assert msg["type"] == "booth:joined"
     assert msg["state"]["room_id"] == 1
-    assert msg["state"]["mediamtx_path"] == "roomcheck/1/it"
+    assert msg["state"]["mediamtx_path"] == f"roomcheck/1/{code}"
 
 
 def test_ws_join_then_leave_broadcasts_state():
