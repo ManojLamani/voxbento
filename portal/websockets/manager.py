@@ -9,7 +9,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 import portal.webhooks.worker as _wh_worker
 from portal.auth import can_perform_role
-from portal.booth_identity import booth_id_to_mediamtx_path
+from portal.booth_identity import booth_id_to_mediamtx_path, parse_booth_id
 from portal.booth_publish import TICKET_TTL_SECS, issue_ticket
 from portal.globals import booths
 from portal.roles import INTERPRETER, can_set_active
@@ -217,8 +217,17 @@ async def _handle_join(ws: WebSocket, session: Session, data: dict) -> None:
     if room_id is not None:
         try:
             room_id = int(room_id)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             await ws.send_text(json.dumps({"type": "booth:error", "message": "room_id must be an integer."}))
+            return
+        # The booth ID already names the room. A different one would give the booth
+        # another room's stream path if this join is the one that creates it (#975).
+        try:
+            _, booth_room_id, _ = parse_booth_id(session.booth_id)
+        except ValueError:
+            booth_room_id = None
+        if booth_room_id is not None and room_id != booth_room_id:
+            await ws.send_text(json.dumps({"type": "booth:error", "message": "room_id does not match this booth."}))
             return
     try:
         participant, state = await booths.join_participant(

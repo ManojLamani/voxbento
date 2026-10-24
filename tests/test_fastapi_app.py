@@ -376,6 +376,39 @@ def test_ws_join_rejected_without_session():
     assert "No role" in msg["message"]
 
 
+@pytest.mark.parametrize(
+    ("booth_id", "room_id", "error"),
+    [
+        ("roomcheck-1-fr", 2, "room_id does not match this booth."),
+        ("roomcheck-1-de", "2", "room_id does not match this booth."),
+        # json.dumps writes Infinity, which int() rejects with OverflowError.
+        ("roomcheck-1-es", float("inf"), "room_id must be an integer."),
+    ],
+)
+def test_ws_join_rejects_room_id_not_matching_booth(booth_id, room_id, error):
+    """A room_id that disagrees with the booth ID must not create the booth in another room (#975)."""
+    from portal.globals import booths
+
+    with client.websocket_connect(f"/ws/booth/{booth_id}", cookies=_ws_auth()) as ws:
+        ws.send_text(
+            json.dumps({"type": "booth:join", "display_name": "Ana", "language": "French", "room_id": room_id})
+        )
+        msg = json.loads(ws.receive_text())
+
+    assert msg == {"type": "booth:error", "message": error}
+    assert booths.get_booth_sync(booth_id) is None
+
+
+def test_ws_join_accepts_room_id_matching_booth():
+    with client.websocket_connect("/ws/booth/roomcheck-1-it", cookies=_ws_auth()) as ws:
+        ws.send_text(json.dumps({"type": "booth:join", "display_name": "Ana", "language": "Italian", "room_id": 1}))
+        msg = json.loads(ws.receive_text())
+
+    assert msg["type"] == "booth:joined"
+    assert msg["state"]["room_id"] == 1
+    assert msg["state"]["mediamtx_path"] == "roomcheck/1/it"
+
+
 def test_ws_join_then_leave_broadcasts_state():
     with client.websocket_connect("/ws/booth/leave-test-booth", cookies=_ws_auth()) as ws:
         ws.send_text(
