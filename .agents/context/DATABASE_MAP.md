@@ -356,6 +356,15 @@ starting the new portal image. `portal/websockets/revocation.py` pushes scoped
 closures; `portal/websockets/reaper.py` checks database state as a fallback.
 These mechanisms retain the supported single-process deployment model.
 
+## Migration 039 — webhook delivery claims
+
+`webhook_deliveries.claim_token` (nullable String(32)) identifies the current
+delivery owner; `claim_until` (nullable UTC datetime) bounds its lease. Claims
+commit before network I/O. Result updates and cancellation cleanup check the token
+before changing delivery or subscription state. Expired claims, including legacy
+`delivering` rows without a lease, become retryable. See
+[`docs/webhook-delivery.md`](../../docs/webhook-delivery.md) for delivery semantics.
+
 ## Migration 027 — managed meeting agent
 
 Room field `meeting_agent_enabled` (Boolean, default false): the durable desired

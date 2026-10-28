@@ -883,6 +883,8 @@ class WebhookDelivery(Base):
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     last_error: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    claim_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     subscription: Mapped[WebhookSubscription] = relationship()
