@@ -683,6 +683,13 @@ async def _handle_join(ws: WebSocket, session: Session, data: dict) -> None:
         except PermissionError as exc:
             await ws.send_text(json.dumps({"type": "booth:error", "message": str(exc)}))
             return
+    # The booth ID names the room. A malformed one would create a booth with no
+    # identity or MediaMTX path, so it is rejected whether or not room_id is sent.
+    try:
+        _, booth_room_id, _ = parse_booth_id(session.booth_id)
+    except ValueError:
+        await ws.send_text(json.dumps({"type": "booth:error", "message": "Invalid booth_id format."}))
+        return
     room_id = data.get("room_id")
     if room_id is not None:
         # Only an integer or a string of digits: int() would turn True or 1.5 into 1.
@@ -694,13 +701,9 @@ async def _handle_join(ws: WebSocket, session: Session, data: dict) -> None:
         if isinstance(room_id, bool) or not isinstance(room_id, int):
             await ws.send_text(json.dumps({"type": "booth:error", "message": "room_id must be an integer."}))
             return
-        # The booth ID already names the room. A different one would give the booth
-        # another room's stream path if this join is the one that creates it (#975).
-        try:
-            _, booth_room_id, _ = parse_booth_id(session.booth_id)
-        except ValueError:
-            booth_room_id = None
-        if booth_room_id is not None and room_id != booth_room_id:
+        # A different room would give the booth another room's stream path if this
+        # join is the one that creates it (#975).
+        if room_id != booth_room_id:
             await ws.send_text(json.dumps({"type": "booth:error", "message": "room_id does not match this booth."}))
             return
     try:
