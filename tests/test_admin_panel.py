@@ -515,6 +515,15 @@ class TestRequireAdmin:
         assert resp.status_code == 200
 
     @pytest.mark.anyio
+    async def test_confirm_popup_is_a_labelled_dialog(self, admin_cookie):
+        async with _client() as c:
+            resp = await c.get("/admin/", cookies=admin_cookie)
+        assert resp.status_code == 200
+        assert '<dialog id="custom-confirm-modal"' in resp.text
+        assert 'aria-labelledby="custom-confirm-message"' in resp.text
+        assert '<div id="custom-confirm-modal"' not in resp.text
+
+    @pytest.mark.anyio
     async def test_invalid_cookie_rejected(self):
         async with _client() as c:
             resp = await c.get("/admin/", cookies={"user_token": "garbage"})
@@ -1263,7 +1272,7 @@ class TestRoomCRUD:
                 cookies=admin_cookie,
             )
         assert resp.status_code == 200
-        assert b"Audio Synchronization Delay (ms)" in resp.content
+        assert b"Listener delay (milliseconds)" in resp.content
         assert b'name="audio_delay_ms"' in resp.content
 
     @pytest.mark.anyio
@@ -1296,6 +1305,13 @@ class TestRoomCRUD:
     @pytest.mark.anyio
     async def test_room_vocabulary_upload_preview_and_export(self, admin_cookie, seed_event):
         event, room, _ = seed_event
+        from portal.database import get_room_by_id, get_session
+
+        # The glossary is part of the AI settings, shown when the room uses AI translation.
+        async with get_session() as session:
+            ai_room = await get_room_by_id(session, room.id)
+            ai_room.floor_transcription_enabled = True
+            ai_room.floor_translation_enabled = True
         csv_content = (
             "source_term,target_language,target_term,description,case_sensitive,match_type,priority\n"
             "Voxbento,all,Voxbento,Product name,true,exact,100\n"
@@ -1316,7 +1332,7 @@ class TestRoomCRUD:
 
             page = await c.get(upload.headers["location"], cookies=admin_cookie)
             assert page.status_code == 200
-            assert b"Imported 4 rows" in page.content
+            assert b"Added 4 terms" in page.content
             assert b"Voxbento" in page.content
             assert b"WebRTC" in page.content
 
@@ -1683,7 +1699,7 @@ class TestBoothCRUD:
                 follow_redirects=False,
             )
             assert resp.status_code == 303
-            assert resp.headers["location"].endswith(f"/setup/booths?room_id={room.id}&error=duplicate_language")
+            assert resp.headers["location"].endswith(f"/setup/rooms?room_id={room.id}&error=duplicate_language")
             page = await c.get(resp.headers["location"], cookies=admin_cookie)
         assert "That room already has a booth for that language." in page.text
 
@@ -2531,17 +2547,18 @@ async def test_user_list_badge_uses_singular_for_one_user(admin_cookie):
     [
         "/admin/setup",
         "/admin/events/{event}/setup/rooms",
-        "/admin/events/{event}/setup/booths",
         "/admin/events/{event}/setup/invite",
+        "/admin/events/{event}/rooms/new",
+        "/admin/events/{event}/rooms/{room}/setup",
     ],
 )
 async def test_setup_wizard_pages_have_no_inline_styles(path, admin_cookie, seed_event):
     import re
 
-    event, _, _ = seed_event
+    event, room, _ = seed_event
 
     async with _client() as c:
-        resp = await c.get(path.format(event=event.id), cookies=admin_cookie)
+        resp = await c.get(path.format(event=event.id, room=room.id), cookies=admin_cookie)
 
     assert resp.status_code == 200
     assert not re.search(rb"\sstyle\s*=", resp.content, re.IGNORECASE)
