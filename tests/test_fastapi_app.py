@@ -612,6 +612,8 @@ def test_ws_standby_cannot_set_mic_active():
 
 def test_ws_standby_cannot_set_themselves_active():
     """Standby interpreter gets booth:error when naming themselves in booth:set-active."""
+    from portal.globals import booths
+
     with (
         client.websocket_connect("/ws/booth/standby-self-active-booth", cookies=_ws_auth()) as ws_a,
         client.websocket_connect("/ws/booth/standby-self-active-booth", cookies=_ws_auth()) as ws_b,
@@ -652,9 +654,11 @@ def test_ws_standby_cannot_set_themselves_active():
 
         ws_b.send_text(json.dumps({"type": "booth:set-active", "target_id": joined_b["participant_id"]}))
         err_msg = json.loads(ws_b.receive_text())
+        # Read the live booth while both sockets are still joined.
+        active_after = booths.get_booth_sync("standby-self-active-booth").active_interpreter_id
 
     assert err_msg["type"] == "booth:error"
-    assert joined_a["state"]["active_interpreter_id"] == joined_a["participant_id"]
+    assert active_after == joined_a["participant_id"]
 
 
 def test_ws_three_way_coordinator_flow():
