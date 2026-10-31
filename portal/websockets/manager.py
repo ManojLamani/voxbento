@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import struct
@@ -694,10 +695,8 @@ async def _handle_join(ws: WebSocket, session: Session, data: dict) -> None:
     if room_id is not None:
         # Only an integer or a string of digits: int() would turn True or 1.5 into 1.
         if isinstance(room_id, str) and room_id.isascii() and room_id.isdecimal():
-            try:
+            with contextlib.suppress(ValueError):  # more digits than int() accepts
                 room_id = int(room_id)
-            except ValueError:  # more digits than int() accepts
-                pass
         if isinstance(room_id, bool) or not isinstance(room_id, int):
             await ws.send_text(json.dumps({"type": "booth:error", "message": "room_id must be an integer."}))
             return
