@@ -111,6 +111,7 @@ async def test_standby_interpreter_cannot_reassign_another_interpreter():
 
 @pytest.mark.anyio
 async def test_standby_interpreter_cannot_make_themselves_active():
+    """A passive interpreter naming themselves must not take the mic from whoever is live."""
     registry = BoothRegistry()
     interpreter_a = await join(registry, "Interpreter A")
     interpreter_b = await join(registry, "Interpreter B")
