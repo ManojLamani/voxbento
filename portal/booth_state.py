@@ -344,10 +344,11 @@ class BoothRegistry:
                 raise ValueError("Requester or target participant does not exist in this booth.")
             if not can_go_live(target.role):
                 raise ValueError("Only people who can go live can be set active.")
+            # A passive interpreter naming themselves is not enough: that would take the
+            # mic from whoever is live without a handoff.
             requester_can_reassign = can_set_active(requester.role)
             requester_is_active = booth.active_interpreter_id == requester_id
-            requester_is_target = requester_id == target_id
-            if not requester_can_reassign and not requester_is_active and not requester_is_target:
+            if not requester_can_reassign and not requester_is_active:
                 raise PermissionError(
                     "Only room coordinators, event owners, Admins or the active interpreter can reassign another interpreter."
                 )

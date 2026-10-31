@@ -610,6 +610,53 @@ def test_ws_standby_cannot_set_mic_active():
     assert err_msg["type"] == "booth:error"
 
 
+def test_ws_standby_cannot_set_themselves_active():
+    """Standby interpreter gets booth:error when naming themselves in booth:set-active."""
+    with (
+        client.websocket_connect("/ws/booth/standby-self-active-booth", cookies=_ws_auth()) as ws_a,
+        client.websocket_connect("/ws/booth/standby-self-active-booth", cookies=_ws_auth()) as ws_b,
+    ):
+        ws_a.send_text(
+            json.dumps(
+                {
+                    "type": "booth:join",
+                    "display_name": "A",
+                    "role": "interpreter",
+                    "language": "French",
+                    "channel_id": "standby-self-active-audio",
+                }
+            )
+        )
+        joined_a = json.loads(ws_a.receive_text())
+        if joined_a["type"] != "booth:joined":
+            joined_a = json.loads(ws_a.receive_text())
+        ws_a.receive_text()  # drain booth:state broadcast on ws_a
+        ws_b.receive_text()  # drain booth:state broadcast from IntA joining
+
+        ws_b.send_text(
+            json.dumps(
+                {
+                    "type": "booth:join",
+                    "display_name": "B",
+                    "role": "interpreter",
+                    "language": "French",
+                    "channel_id": "standby-self-active-audio",
+                }
+            )
+        )
+        joined_b = json.loads(ws_b.receive_text())
+        if joined_b["type"] != "booth:joined":
+            joined_b = json.loads(ws_b.receive_text())
+        ws_b.receive_text()  # drain booth:state on ws_b
+        ws_a.receive_text()  # drain broadcast to ws_a when ws_b joined
+
+        ws_b.send_text(json.dumps({"type": "booth:set-active", "target_id": joined_b["participant_id"]}))
+        err_msg = json.loads(ws_b.receive_text())
+
+    assert err_msg["type"] == "booth:error"
+    assert joined_a["state"]["active_interpreter_id"] == joined_a["participant_id"]
+
+
 def test_ws_three_way_coordinator_flow():
     """Full 3-connection scenario: two interpreters + coordinator.
 
