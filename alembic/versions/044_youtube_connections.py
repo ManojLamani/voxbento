@@ -1,7 +1,7 @@
 """add youtube_connections and the room's linked YouTube broadcast (#1087)
 
-Revision ID: 042
-Revises: 041
+Revision ID: 044
+Revises: 043
 Create Date: 2026-11-01 12:00:00.000000
 
 """
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "042"
-down_revision: Union[str, Sequence[str], None] = "041"
+revision: str = "044"
+down_revision: Union[str, Sequence[str], None] = "043"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
