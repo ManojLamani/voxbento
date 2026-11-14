@@ -85,7 +85,9 @@ async def test_recovered_floor_keeps_sequence_identity(source, recovery, monkeyp
     captions = []
 
     async def callback(booth, payload):
-        captions.append(payload)
+        # Partial captions carry no sequence; only finals are published with one.
+        if payload.get("status") == "final":
+            captions.append(payload)
         await broadcast_transcription(booth, payload)
 
     current_process = None
@@ -134,7 +136,10 @@ async def test_recovered_floor_keeps_sequence_identity(source, recovery, monkeyp
                 await asyncio.Event().wait()
             self.number += 1
             text = f"{self.process.phase} recovery sentence {self.number}"
-            return json.dumps({"channel": {"alternatives": [{"transcript": text}]}, "is_final": True})
+            # Deepgram ends a phrase with speech_final; is_final alone only settles a stretch of audio.
+            return json.dumps(
+                {"channel": {"alternatives": [{"transcript": text}]}, "is_final": True, "speech_final": True}
+            )
 
     class FakeFfmpeg:
         def __init__(self, *args):
