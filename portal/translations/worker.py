@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 
 from portal import youtube_captions
@@ -231,9 +232,13 @@ class TranslationWorker:
         booth_id_str: str,
         uuid_segment_id: str = "",
         seq: int = 0,
+        *,
+        arrived_at: float | None = None,
     ) -> list:
         """Run the translation tasks of a resolved job: one per language with listeners."""
-        tasks = self._build_language_tasks(job, segment_id, text, booth_id_str, uuid_segment_id, seq)
+        tasks = self._build_language_tasks(
+            job, segment_id, text, booth_id_str, uuid_segment_id, seq, arrived_at=arrived_at
+        )
         if tasks:
             logger.error(f"[{booth_id_str}] Spawning {len(tasks)} translation tasks for active listeners")
             await asyncio.gather(*tasks)
@@ -247,6 +252,8 @@ class TranslationWorker:
 
         from portal.models import TranscriptSegment
 
+        # The lag budget counts from here, so resolving the job below counts against it (#1189).
+        arrived_at = time.monotonic()
         async with get_session() as session:
             segment = await session.scalar(select(TranscriptSegment).where(TranscriptSegment.id == segment_id))
             if not segment:
@@ -266,7 +273,9 @@ class TranslationWorker:
         if job is None:
             return
         sentence = self._accumulate_sentence(text)
-        await self._process_completed_sentence(job, segment_id, sentence, booth_id_str, uuid_segment_id, seq)
+        await self._process_completed_sentence(
+            job, segment_id, sentence, booth_id_str, uuid_segment_id, seq, arrived_at=arrived_at
+        )
 
     async def _resolve_translation_job(
         self, session, room_id: int, segment, booth_id_str: str
@@ -374,6 +383,8 @@ class TranslationWorker:
         booth_id_str: str,
         uuid_segment_id: str,
         seq: int,
+        *,
+        arrived_at: float | None = None,
     ) -> list:
         """Construct the async translation and broadcast tasks for a resolved job."""
         tasks = []
@@ -417,6 +428,7 @@ class TranslationWorker:
                         job.source_booth_id,
                         synthesize_audio=audience == LISTENERS,
                         recheck_audience=True,
+                        arrived_at=arrived_at,
                     )
                 )
 
@@ -446,19 +458,21 @@ class TranslationWorker:
         source_booth_id: int | None = None,
         synthesize_audio: bool = True,
         recheck_audience: bool = False,
+        arrived_at: float | None = None,
     ):
         """Translate and deliver a segment, keeping advisory status failures outside inference.
 
         ``synthesize_audio`` is False when nobody listens to this language (it is only translated for the
         YouTube caption track), so no speech is generated for it. With ``recheck_audience``, who takes
         the translation is checked again when the segment gets its engine slot (#1189): the last
-        listener may have left while it waited.
+        listener may have left while it waited. ``arrived_at`` (``time.monotonic()``) is when the
+        segment arrived; the lag budget counts from it, or from now when it is not given.
         """
         from portal.websockets.manager import tts_manager
 
         queue_key = f"{booth_id_str}:{lang_code}"
         # Rooms take turns for the engine, and so do the languages within a room.
-        job = scheduler_for(provider).admit(room.id, queue_key)
+        job = scheduler_for(provider).admit(room.id, queue_key, arrived_at=arrived_at)
 
         if job is None:
             logger.warning(f"[{booth_id_str}] Queue full for {lang_code}. Dropping segment {seq}.")

@@ -587,6 +587,21 @@ async def test_a_job_handed_its_slot_after_the_deadline_is_dropped_even_if_its_t
     assert scheduler.admitted("room-2", "room-2:de") == 0
 
 
+async def test_the_lag_budget_counts_from_the_segment_arriving_not_from_admission():
+    scheduler = TranslationScheduler(1, lag_budget=0.5)
+    # The segment arrived a second ago (its job was resolved meanwhile) and is admitted only now.
+    job = scheduler.admit("room", "room:fr", arrived_at=time.monotonic() - 1.0)
+
+    with pytest.raises(StaleTranslationJob) as dropped:
+        async with job:
+            pytest.fail("a stale job must not start")
+    job.close()
+
+    assert dropped.value.waited >= 1.0
+    assert scheduler.running == 0
+    assert scheduler.admitted("room", "room:fr") == 0
+
+
 async def test_a_job_that_starts_within_the_lag_budget_runs():
     scheduler = TranslationScheduler(1, lag_budget=5.0)
     recorder = Recorder(scheduler)
@@ -682,3 +697,34 @@ async def test_a_segment_is_skipped_when_its_last_listener_left_while_it_waited(
     # German's inference runs only if someone still listens when its turn comes.
     assert engine.calls == (["fr"] if left else ["fr", "de"])
     assert worker_module.scheduler_for("held").running == 0
+
+
+async def test_the_worker_counts_the_lag_budget_from_when_the_segment_arrived(monkeypatch):
+    """Time spent resolving the job before it reaches the scheduler counts against the budget."""
+    engine = HeldEngine()
+    monkeypatch.setitem(worker_module.ENGINES, "held", engine)
+    monkeypatch.setattr(settings, "translation_max_lag_seconds", 0.5)
+    bundle = AsyncMock()
+    monkeypatch.setattr("portal.websockets.manager.tts_manager.broadcast_bundle", bundle)
+    monkeypatch.setattr("portal.websockets.manager.tts_manager.has_listeners", lambda room_id, lang, booth_id: True)
+    monkeypatch.setattr("portal.websockets.manager.listener_manager.has_listeners", lambda booth_id: False)
+    job = worker_module._ResolvedTranslation(
+        event=SimpleNamespace(id=1, slug="event"),
+        room=fake_room(1),
+        provider="held",
+        model="m",
+        api_key=None,
+        enabled_langs=[SimpleNamespace(language_code="fr", language_name="French")],
+        source_lang_code="en",
+        source_lang_name="English",
+    )
+
+    # The engine is free, but the segment arrived a second ago.
+    tasks = TranslationWorker(MagicMock())._build_language_tasks(
+        job, 1, "Hello", "event-1-floor", "uuid", 1, arrived_at=time.monotonic() - 1.0
+    )
+    await asyncio.gather(*tasks)
+
+    assert engine.calls == []
+    assert bundle.await_args.args[8] == "stale"
+    assert worker_module.scheduler_for("held").admitted(1, "event-1-floor:fr") == 0

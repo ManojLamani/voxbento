@@ -10,9 +10,9 @@ limits the worker had before: at most ``per_channel`` calls running and ``queue_
 admitted at once. A job is admitted when its segment arrives and counts against its channel
 until its call is done.
 
-A scheduler with a lag budget drops a job that cannot start within that many seconds of being
-admitted (#1189): its language skips that segment and catches up with the speaker, instead of
-falling further behind with every segment that waits.
+A scheduler with a lag budget drops a job that cannot start within that many seconds of its
+segment arriving (#1189): its language skips that segment and catches up with the speaker,
+instead of falling further behind with every segment that waits.
 """
 
 from __future__ import annotations
@@ -55,21 +55,24 @@ class TranslationJob:
     ``StaleTranslationJob`` when the job cannot start within the scheduler's lag budget.
     """
 
-    __slots__ = ("_scheduler", "_room", "_channel", "_state", "_busy_until", "_admitted_at")
+    __slots__ = ("_scheduler", "_room", "_channel", "_state", "_busy_until", "_arrived_at")
 
-    def __init__(self, scheduler: TranslationScheduler, room: Hashable, channel: str) -> None:
+    def __init__(
+        self, scheduler: TranslationScheduler, room: Hashable, channel: str, arrived_at: float | None = None
+    ) -> None:
         self._scheduler = scheduler
         self._room = room
         self._channel = channel
         # "admitted" -> "running" -> "closed", or straight from "admitted" to "closed".
         self._state = "admitted"
         self._busy_until: asyncio.Future | None = None
-        self._admitted_at = time.monotonic()
+        #: When the segment arrived (``time.monotonic()``), or when the job was admitted if not given.
+        self._arrived_at = time.monotonic() if arrived_at is None else arrived_at
 
     @property
     def waited(self) -> float:
-        """Seconds since the job was admitted."""
-        return time.monotonic() - self._admitted_at
+        """Seconds since the job's segment arrived."""
+        return time.monotonic() - self._arrived_at
 
     async def __aenter__(self) -> TranslationJob:
         if self._state != "admitted":
@@ -105,8 +108,8 @@ class TranslationJob:
 class TranslationScheduler:
     """Bounded, fair access to one engine: rooms take turns, then languages within a room.
 
-    ``lag_budget`` is the most seconds a job may wait between being admitted and starting; a job
-    that would wait longer is dropped as stale. None (or 0) never drops a job for waiting.
+    ``lag_budget`` is the most seconds a job may wait between its segment arriving and starting;
+    a job that would wait longer is dropped as stale. None (or 0) never drops a job for waiting.
     """
 
     def __init__(
@@ -129,8 +132,12 @@ class TranslationScheduler:
         # when it comes back it joins at the back too, behind everyone already waiting.
         self._rooms: OrderedDict[Hashable, OrderedDict[str, _Channel]] = OrderedDict()
 
-    def admit(self, room: Hashable, channel: str) -> TranslationJob | None:
-        """A place in ``channel`` for one segment, or None when the channel is already full."""
+    def admit(self, room: Hashable, channel: str, *, arrived_at: float | None = None) -> TranslationJob | None:
+        """A place in ``channel`` for one segment, or None when the channel is already full.
+
+        ``arrived_at`` is when the segment arrived, from ``time.monotonic()``; the lag budget counts
+        from it. Without it, the budget counts from now.
+        """
         channels = self._rooms.get(room)
         if channels is None:
             channels = self._rooms[room] = OrderedDict()
@@ -140,7 +147,7 @@ class TranslationScheduler:
         if state.admitted >= self.queue_limit:
             return None
         state.admitted += 1
-        return TranslationJob(self, room, channel)
+        return TranslationJob(self, room, channel, arrived_at)
 
     def set_capacity(self, capacity: int) -> None:
         """Change how many calls may run at once. Calls already running finish; none are stopped."""
